@@ -20,15 +20,16 @@ from tests.agent import Agent
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar("T", bound=BaseModel)
 
-WindowFrame = namedtuple('WindowFrame', ['left', 'top', 'right', 'bottom'])
+WindowFrame = namedtuple("WindowFrame", ["left", "top", "right", "bottom"])
+
 
 class KOReaderDriver:
     def __init__(self, agent: Agent, koreader_home: Path):
         self.agent = agent
         self.koreader_home = koreader_home
-        self.rakuyomi_home = koreader_home / 'rakuyomi'
+        self.rakuyomi_home = koreader_home / "rakuyomi"
         self.rakuyomi_home.mkdir(parents=True, exist_ok=True)
         self.ipc_socket_path = "/tmp/rakuyomi_testing_ipc.sock"
         self.reader = None
@@ -64,7 +65,7 @@ class KOReaderDriver:
         # Write settings file
         settings = {
             "source_lists": [
-                "https://raw.githubusercontent.com/Skittyblock/aidoku-community-sources/refs/heads/gh-pages/index.min.json",
+                "https://aidoku-community.github.io/sources/index.min.json",
             ],
             "languages": ["en"],
             "storage_size_limit": "2GB",
@@ -74,26 +75,28 @@ class KOReaderDriver:
             json.dump(settings, f, indent=2)
 
         self.process = await asyncio.create_subprocess_exec(
-            'dev',
+            "dev",
             stdout=sys.stderr,
             env={
                 **os.environ,
-                'RAKUYOMI_IS_TESTING': '1',
-                'KO_HOME': self.koreader_home,
+                "RAKUYOMI_IS_TESTING": "1",
+                "KO_HOME": self.koreader_home,
             },
-            process_group=0
+            process_group=0,
         )
 
         # Wait for KOReader to connect via IPC
         try:
-            initialization_timeout = float(os.environ.get('RAKUYOMI_TEST_INITIALIZATION_TIMEOUT', '30'))
+            initialization_timeout = float(
+                os.environ.get("RAKUYOMI_TEST_INITIALIZATION_TIMEOUT", "30")
+            )
 
             async with asyncio.timeout(initialization_timeout):
                 while not self.reader:
                     await asyncio.sleep(0.1)
-                logger.info('KOReader connected to IPC socket')
+                logger.info("KOReader connected to IPC socket")
 
-                await self.wait_for_event('initialized', initialization_timeout)
+                await self.wait_for_event("initialized", initialization_timeout)
         except TimeoutError:
             await self._stop_process()
             raise TimeoutError("Timeout waiting for IPC connection/initialization")
@@ -101,11 +104,10 @@ class KOReaderDriver:
         # For some reason, sometimes KOReader decides to disable input handling on initialization.
         # Wait for a bit after initialization for hooks to work.
         await asyncio.sleep(1)
-        logger.info('Waited for KOReader\'s user input handling to be enabled')
+        logger.info("Waited for KOReader's user input handling to be enabled")
 
         window = next(
-            (w for w in pywinctl.getAllWindows() if w.title.endswith('KOReader')),
-            None
+            (w for w in pywinctl.getAllWindows() if w.title.endswith("KOReader")), None
         )
 
         if not window:
@@ -123,7 +125,7 @@ class KOReaderDriver:
             self.writer.close()
             await self.writer.wait_closed()
 
-        if hasattr(self, '_server'):
+        if hasattr(self, "_server"):
             self._server.close()
             await self._server.wait_closed()
 
@@ -135,11 +137,13 @@ class KOReaderDriver:
         await self._stop_process()
 
     async def _stop_process(self):
-        if hasattr(self, 'process') and self.process:
+        if hasattr(self, "process") and self.process:
             os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             await self.process.communicate()
 
-    async def _handle_ipc_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def _handle_ipc_connection(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
         """Handles new IPC connections."""
         self.reader = reader
         self.writer = writer
@@ -149,11 +153,8 @@ class KOReaderDriver:
         if not self.writer:
             raise RuntimeError("No IPC connection available")
 
-        message = {
-            "type": command_type,
-            "params": params or {}
-        }
-        self.writer.write(json.dumps(message).encode() + b'\n')
+        message = {"type": command_type, "params": params or {}}
+        self.writer.write(json.dumps(message).encode() + b"\n")
         await self.writer.drain()
 
     def activate_window(self):
@@ -163,20 +164,22 @@ class KOReaderDriver:
     async def open_library_view(self):
         """Opens the library view in KOReader."""
         self.activate_window()
-        pyautogui.hotkey('shift', 'f9')
+        pyautogui.hotkey("shift", "f9")
 
-        await self.wait_for_event('library_view_shown')
+        await self.wait_for_event("library_view_shown")
 
     async def request_ui_contents(self, timeout=15) -> str:
         """Requests and returns the current UI contents."""
         start = datetime.now()
         await self._send_ipc_command("dump_ui")
 
-        event = await self.wait_for_event('ui_contents', timeout=timeout)
-        ui_contents: str = event['params']['contents']
+        event = await self.wait_for_event("ui_contents", timeout=timeout)
+        ui_contents: str = event["params"]["contents"]
         duration = datetime.now() - start
 
-        logger.info(f'Requested UI contents in {duration.total_seconds()}s, hash is {hashlib.sha256(ui_contents.encode()).hexdigest()}')
+        logger.info(
+            f"Requested UI contents in {duration.total_seconds()}s, hash is {hashlib.sha256(ui_contents.encode()).hexdigest()}"
+        )
 
         return ui_contents
 
@@ -188,7 +191,7 @@ class KOReaderDriver:
             source_id: The ID of the source to install
         """
         await self._send_ipc_command("install_source", {"source_id": source_id})
-        await self.wait_for_event('source_installed')
+        await self.wait_for_event("source_installed")
 
     async def screenshot(self, output: Path) -> None:
         """
@@ -203,15 +206,20 @@ class KOReaderDriver:
         img = pyautogui.screenshot(None)
         draw = ImageDraw.Draw(img)
         radius = 10
-        draw.ellipse([
-            cursor_position.x - radius,
-            cursor_position.y - radius,
-            cursor_position.x + radius,
-            cursor_position.y + radius
-        ], fill='red')
+        draw.ellipse(
+            [
+                cursor_position.x - radius,
+                cursor_position.y - radius,
+                cursor_position.x + radius,
+                cursor_position.y + radius,
+            ],
+            fill="red",
+        )
         img.save(output)
 
-    async def query(self, query: str, response_class: Type[T] | TypeAdapter[T], timeout=15) -> T:
+    async def query(
+        self, query: str, response_class: Type[T] | TypeAdapter[T], timeout=15
+    ) -> T:
         """
         Performs a query on the current UI contents and returns the response.
 
@@ -226,9 +234,7 @@ class KOReaderDriver:
         ui_contents = await self.request_ui_contents(timeout=timeout)
 
         return self.agent.query(
-            ui_contents=ui_contents,
-            query=query,
-            response_class=response_class
+            ui_contents=ui_contents, query=query, response_class=response_class
         )
 
     def type(self, text: str):
@@ -240,9 +246,9 @@ class KOReaderDriver:
         """
         self.activate_window()
 
-        if platform.system() == 'Darwin':
+        if platform.system() == "Darwin":
             # Workaround for https://github.com/asweigart/pyautogui/issues/796
-            pyautogui.keyUp('fn')
+            pyautogui.keyUp("fn")
         pyautogui.write(text)
 
     def click_element(self, element_location, hold: float = 0.0):
@@ -258,9 +264,8 @@ class KOReaderDriver:
         window_offset_y = element_location.y + element_location.height // 2
 
         # Handle retina displays on macOS
-        is_retina = platform.system() == 'Darwin' and subprocess.call(
-            "system_profiler SPDisplaysDataType | grep 'retina'",
-            shell=True
+        is_retina = platform.system() == "Darwin" and subprocess.call(
+            "system_profiler SPDisplaysDataType | grep 'retina'", shell=True
         )
         if is_retina:
             window_offset_x /= 2
@@ -270,7 +275,9 @@ class KOReaderDriver:
         x = window_area.left + window_offset_x
         y = window_area.top + window_offset_y
 
-        logger.info(f'Clicking on {window_offset_x}x{window_offset_y} inside the window -> {x}x{y} real position (window frame: {window_area})')
+        logger.info(
+            f"Clicking on {window_offset_x}x{window_offset_y} inside the window -> {x}x{y} real position (window frame: {window_area})"
+        )
 
         pyautogui.moveTo(x=x, y=y)
 
@@ -315,7 +322,7 @@ class KOReaderDriver:
 
                     try:
                         json_message = json.loads(line)
-                        if json_message.get('type') == event_type:
+                        if json_message.get("type") == event_type:
                             return json_message
                     except:
                         logger.debug(f'Couldn\'t parse line: "{line}"')
@@ -324,7 +331,7 @@ class KOReaderDriver:
             raise TimeoutError(f"Timeout waiting for event: {event_type}")
 
     def _get_window_frame(self) -> WindowFrame:
-        if 'CI' in os.environ:
+        if "CI" in os.environ:
             # pywinctl fucks up when we're running under Fluxbox.
             # For now, hardcode the window dimensions when under CI.
             return WindowFrame(
@@ -336,8 +343,5 @@ class KOReaderDriver:
 
         frame = self.window.getClientFrame()
         return WindowFrame(
-            left=frame.left,
-            top=frame.top,
-            right=frame.right,
-            bottom=frame.bottom
+            left=frame.left, top=frame.top, right=frame.right, bottom=frame.bottom
         )

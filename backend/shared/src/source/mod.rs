@@ -116,7 +116,8 @@ impl Source {
 #[allow(dead_code)]
 pub struct SourceInfo {
     pub id: String,
-    pub lang: String,
+    #[serde(rename = "languages")]
+    pub lang: Vec<String>,
     pub name: String,
     pub version: usize,
 }

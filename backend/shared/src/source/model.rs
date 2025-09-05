@@ -43,6 +43,22 @@ pub enum SettingDefinition {
     },
     #[serde(rename = "link")]
     Link { title: String, url: String },
+    #[serde(rename = "multi-select")]
+    MultiSelect {
+        title: String,
+        key: String,
+        values: Vec<String>,
+        titles: Option<Vec<String>>,
+        default: Vec<String>,
+    },
+    #[serde(rename = "login")]
+    Login { title: String, key: String },
+    #[serde(rename = "editable-list")]
+    EditableList {
+        title: String,
+        key: String,
+        default: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Default, FromPrimitive)]

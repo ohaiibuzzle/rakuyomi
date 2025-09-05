@@ -3,7 +3,10 @@ use futures::{stream, StreamExt, TryStreamExt};
 use serde::Deserialize;
 use url::Url;
 
-use crate::{model::SourceId, source_manager::SourceManager};
+use crate::{
+    model::{SourceId, SourceResponse},
+    source_manager::SourceManager,
+};
 
 pub async fn install_source(
     source_manager: &mut SourceManager,
@@ -14,10 +17,10 @@ pub async fn install_source(
         .then(|source_list| async move {
             let source_list_items = reqwest::get(source_list.clone())
                 .await?
-                .json::<Vec<SourceListItem>>()
+                .json::<SourceResponse>()
                 .await?;
 
-            anyhow::Ok((source_list, source_list_items))
+            anyhow::Ok((source_list, source_list_items.sources))
         })
         .try_collect::<Vec<_>>()
         .await?
@@ -31,19 +34,11 @@ pub async fn install_source(
         .find(|(_, item)| item.id == source_id)
         .ok_or_else(|| anyhow!("couldn't find source with id '{:?}'", source_id))?;
 
-    let aix_url = source_list
-        .join(&format!("sources/{}", &source_list_item.file))
-        .unwrap();
+    let aix_url = source_list.join(&source_list_item.file).unwrap();
 
     let aix_content = reqwest::get(aix_url).await?.bytes().await?;
 
     source_manager.install_source(&source_id, aix_content)?;
 
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct SourceListItem {
-    id: SourceId,
-    file: String,
 }

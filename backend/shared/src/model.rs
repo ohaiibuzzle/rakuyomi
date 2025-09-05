@@ -92,10 +92,18 @@ impl ChapterId {
 }
 
 #[derive(Clone, Deserialize, Debug)]
+pub struct SourceResponse {
+    pub name: String,
+    pub sources: Vec<SourceInformation>,
+}
+
+#[derive(Clone, Deserialize, Debug)]
 pub struct SourceInformation {
     pub id: SourceId,
     pub name: String,
     pub version: usize,
+    #[serde(rename = "downloadURL")]
+    pub file: String,
 }
 
 #[derive(Clone, Debug)]
@@ -145,6 +153,7 @@ impl From<SourceManifest> for SourceInformation {
             id: SourceId::new(value.info.id),
             name: value.info.name,
             version: value.info.version,
+            file: "".to_owned(),
         }
     }
 }
