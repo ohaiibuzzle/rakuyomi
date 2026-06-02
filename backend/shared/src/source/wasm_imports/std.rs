@@ -64,6 +64,11 @@ pub fn register_std_imports(linker: &mut Linker<WasmStore>) -> Result<()> {
     register_wasm_function!(linker, "std", "array_set", array_set)?;
     register_wasm_function!(linker, "std", "array_append", array_append)?;
     register_wasm_function!(linker, "std", "array_remove", array_remove)?;
+    register_wasm_function!(linker, "std", "print", print)?;
+    register_wasm_function!(linker, "std", "abort", abort)?;
+    register_wasm_function!(linker, "std", "buffer_len", buffer_len)?;
+    register_wasm_function!(linker, "std", "read_buffer", read_buffer)?;
+
     Ok(())
 }
 
@@ -889,6 +894,88 @@ fn array_remove(
     array.remove(index);
     wasm_store.set_std_value(descriptor, Value::Array(array).into());
     Ok(())
+}
+
+#[aidoku_wasm_function]
+fn print(mut caller: Caller<'_, WasmStore>, string_i32: i32, string_len_i32: i32) {
+    let string_offset: usize = string_i32
+        .try_into()
+        .context("failed to convert string_i32 in print")
+        .unwrap();
+    let string_len: usize = string_len_i32
+        .try_into()
+        .ok()
+        .filter(|&len| len > 0)
+        .context("invalid string_len_i32 in print")
+        .unwrap();
+    let memory = get_memory(&mut caller)
+        .context("failed to get memory in print")
+        .unwrap();
+    let string = read_memory_string(&memory, &caller, string_offset, string_len)
+        .context("failed to read string in print")
+        .unwrap();
+    println!("{}", string);
+}
+
+#[aidoku_wasm_function]
+fn abort(mut _caller: Caller<'_, WasmStore>) {
+    // This is part of the panic() sequence in aidoku-rs, makes sense it should kill the server.
+    std::process::abort();
+}
+
+#[aidoku_wasm_function]
+fn buffer_len(mut caller: Caller<'_, WasmStore>, buffer_i32: i32) -> Result<i32> {
+    let descriptor: usize = buffer_i32
+        .try_into()
+        .context("failed to convert buffer_i32 in buffer_len")?;
+    let wasm_store = caller.data_mut();
+    let value = wasm_store
+        .get_std_value(descriptor)
+        .context("failed to get value in buffer_len")?;
+    match value.as_ref() {
+        Value::Vec(v) => Ok(v.len() as i32),
+        _ => Err(anyhow::anyhow!("expected Vec value in buffer_len")),
+    }
+}
+
+#[aidoku_wasm_function]
+fn read_buffer(
+    mut caller: Caller<'_, WasmStore>,
+    rid_i32: i32,
+    buffer_i32: i32,
+    size_i32: i32,
+) -> Result<i32> {
+    let descriptor: usize = match rid_i32.try_into() {
+        Ok(v) => v,
+        Err(_) => return Ok(-1),
+    };
+    let offset: usize = match buffer_i32.try_into() {
+        Ok(v) => v,
+        Err(_) => return Ok(-1),
+    };
+    let size: usize = match size_i32.try_into() {
+        Ok(v) => v,
+        Err(_) => return Ok(-1),
+    };
+
+    let wasm_store = caller.data();
+    let Some(value) = wasm_store.get_std_value(descriptor) else {
+        return Ok(-1);
+    };
+    let bytes = match value.as_ref() {
+        Value::Vec(v) => v.clone(),
+        _ => return Ok(-1),
+    };
+
+    if size <= bytes.len() {
+        let Some(memory) = get_memory(&mut caller) else {
+            return Ok(-1);
+        };
+        write_bytes(&memory, &mut caller, &bytes[..size], offset)
+            .context("failed to write bytes in read_buffer")?;
+    }
+
+    Ok(0)
 }
 
 // TODO maybe write a macro for this

@@ -36,6 +36,10 @@ pub fn register_net_imports(linker: &mut Linker<WasmStore>) -> Result<()> {
         "set_rate_limit_period",
         set_rate_limit_period
     )?;
+    register_wasm_function!(linker, "net", "data_len", get_data_size)?;
+    register_wasm_function!(linker, "net", "read_data", get_data)?;
+    register_wasm_function!(linker, "net", "get_image", get_image)?;
+
     register_wasm_function!(linker, "net", "send", send)?;
     register_wasm_function!(linker, "net", "get_url", get_url)?;
     register_wasm_function!(linker, "net", "get_data_size", get_data_size)?;
@@ -453,4 +457,33 @@ pub fn html(mut caller: Caller<'_, WasmStore>, request_descriptor_i32: i32) -> R
         // Some(request_descriptor),
         None,
     ) as i32)
+}
+
+#[aidoku_wasm_function]
+pub fn get_image(mut caller: Caller<'_, WasmStore>, request_descriptor_i32: i32) -> Result<i32> {
+    let request_descriptor: usize = request_descriptor_i32
+        .try_into()
+        .context("invalid request descriptor")?;
+    let body = {
+        let wasm_store = caller.data_mut();
+        let request = wasm_store
+            .get_mut_request(request_descriptor)
+            .context("failed to get request state")?;
+        let response = match request {
+            RequestState::Sent(resp) => resp,
+            _ => anyhow::bail!("request not sent"),
+        };
+        response
+            .body
+            .as_ref()
+            .context("response body not found")?
+            .clone()
+    };
+
+    let image_descriptor = caller
+        .data_mut()
+        .create_image(&body)
+        .context("failed to decode image")?;
+
+    Ok(image_descriptor as i32)
 }

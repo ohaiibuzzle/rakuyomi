@@ -19,6 +19,7 @@ pub fn register_js_imports(linker: &mut Linker<WasmStore>) -> Result<()> {
     register_wasm_function!(linker, "js", "webview_load_html", webview_load_html)?;
     register_wasm_function!(linker, "js", "webview_wait_for_load", webview_wait_for_load)?;
     register_wasm_function!(linker, "js", "webview_eval", webview_eval)?;
+
     Ok(())
 }
 
@@ -184,7 +185,8 @@ fn webview_wait_for_load(mut caller: Caller<'_, WasmStore>, webview_ptr: i32) ->
 fn webview_eval(
     mut caller: Caller<'_, WasmStore>,
     webview_ptr: i32,
-    code: Option<String>,
+    str_ptr: i32,
+    len: i32,
 ) -> FFIResult {
     #[cfg(not(feature = "all"))]
     {
@@ -195,7 +197,13 @@ fn webview_eval(
         let Some(webview) = store.get_webview(webview_ptr as usize) else {
             return Ok(ResultContext::InvalidContext as i32);
         };
-        let Some(code) = code else {
+        let Some(code) = unsafe {
+            std::str::from_utf8(std::slice::from_raw_parts(
+                str_ptr as *const u8,
+                len as usize,
+            ))
+        }
+        .ok() else {
             return Ok(ResultContext::InvalidString as i32);
         };
 
